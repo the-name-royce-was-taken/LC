@@ -38,7 +38,7 @@ export interface MultiplayerPanelProps {
   /** Vehicle ids allowed by a car-class rule */
   vehiclesForClass?: (rule: CarClassRule) => string[];
   raceRunning?: boolean;
-  onHostLocal?: () => void;
+  onToggleLocalMode?: (enabled: boolean) => void;
   onSetLobbySettings?: (patch: Partial<LobbySettings>) => void;
   onSetReady?: (ready: boolean) => void;
   onStartRace?: () => void;
@@ -167,7 +167,7 @@ export const MultiplayerPanel: React.FC<MultiplayerPanelProps> = ({
   vehicleLabel,
   vehiclesForClass,
   raceRunning = false,
-  onHostLocal,
+  onToggleLocalMode,
   onSetLobbySettings,
   onSetReady,
   onStartRace,
@@ -573,14 +573,6 @@ export const MultiplayerPanel: React.FC<MultiplayerPanelProps> = ({
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            disabled={!onHostLocal}
-            onClick={() => onHostLocal?.()}
-            className="self-start cursor-pointer text-left text-[13px] font-semibold text-[#00E5FF] hover:text-[#CCFF00] hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
-          >
-            Race these tabs (same browser)
-          </button>
         </div>
 
         {profile ? (
@@ -749,6 +741,34 @@ export const MultiplayerPanel: React.FC<MultiplayerPanelProps> = ({
             </div>
           ) : null}
         </div>
+
+          <div className="flex items-center justify-between gap-4 border-t border-[#262B3D] pt-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="text-[13px] font-bold text-[#F5F7FA]">Same-browser connection</span>
+              <span className="text-[11px] leading-snug text-[#8E96AA]">Play with another tab or window in this browser</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={p2pStatus?.mode === "local" && p2pStatus?.state === "connected"}
+              aria-label="Same-browser connection"
+              disabled={!onToggleLocalMode}
+              onClick={() => onToggleLocalMode?.(!(p2pStatus?.mode === "local" && p2pStatus?.state === "connected"))}
+              className={`relative inline-flex h-7 w-[50px] shrink-0 cursor-pointer items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                p2pStatus?.mode === "local" && p2pStatus?.state === "connected"
+                  ? "border-[#CCFF00] bg-[#CCFF00]"
+                  : "border-[#3A4157] bg-[#1B1F2B]"
+              }`}
+            >
+              <span
+                className={`absolute h-5 w-5 rounded-full shadow-sm transition-transform ${
+                  p2pStatus?.mode === "local" && p2pStatus?.state === "connected"
+                    ? "translate-x-[26px] bg-[#08090D]"
+                    : "translate-x-1 bg-[#8E96AA]"
+                }`}
+              />
+            </button>
+          </div>
 
         <p className="m-0 font-f1-mono text-[11px] leading-normal text-[#8E96AA]/80">
           {p2pStatus?.statusText ?? "Same-browser tabs connect automatically. Use a room code for other devices."}

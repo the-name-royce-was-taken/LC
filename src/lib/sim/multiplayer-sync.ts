@@ -533,25 +533,28 @@ export class MultiplayerSyncManager {
     this.onStatusChange?.({ ...this.status });
   }
 
+  private openBroadcastChannel(): void {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window) || this.channel) return;
+    try {
+      this.channel = new BroadcastChannel('kigali_f1_sim_net_v1');
+      this.channel.onmessage = (ev: MessageEvent<NetworkVehiclePacket | ControlEnvelope>) => {
+        const data = ev.data as Partial<ControlEnvelope> & Partial<NetworkVehiclePacket>;
+        if (!data || typeof data !== 'object') return;
+        if (data.ctl) {
+          this.handleEnvelope(data as ControlEnvelope, null);
+        } else if (data.peerId && data.peerId !== this.localPeerId) {
+          this.ingestPacket(data as NetworkVehiclePacket, false);
+        }
+      };
+    } catch {
+      // BroadcastChannel unavailable in restricted context
+    }
+  }
+
   private initTransports(): void {
     if (typeof window === 'undefined') return;
 
-    if ('BroadcastChannel' in window) {
-      try {
-        this.channel = new BroadcastChannel('kigali_f1_sim_net_v1');
-        this.channel.onmessage = (ev: MessageEvent<NetworkVehiclePacket | ControlEnvelope>) => {
-          const data = ev.data as Partial<ControlEnvelope> & Partial<NetworkVehiclePacket>;
-          if (!data || typeof data !== 'object') return;
-          if (data.ctl) {
-            this.handleEnvelope(data as ControlEnvelope, null);
-          } else if (data.peerId && data.peerId !== this.localPeerId) {
-            this.ingestPacket(data as NetworkVehiclePacket, false);
-          }
-        };
-      } catch {
-        // BroadcastChannel unavailable in restricted context
-      }
-    }
+    this.openBroadcastChannel();
 
     const wsUrl = process.env.NEXT_PUBLIC_SIM_WS_URL;
     if (wsUrl) {
@@ -999,10 +1002,23 @@ export class MultiplayerSyncManager {
     this.setLobby(null);
   }
 
-  /** Hosts a race for the other tabs of this browser (no network needed) */
+  /** Enables or disables same-browser play without changing the room-code or manual WebRTC transports. */
+  public setLocalModeEnabled(enabled: boolean): void {
+    if (enabled) {
+      this.openBroadcastChannel();
+      this.emitStatus({ mode: 'local', state: 'connected', roomCode: '', statusText: 'Same-browser connection enabled' });
+      this.becomeHost();
+      return;
+    }
+    if (this.status.mode === 'local') {
+      this.becomeGuest();
+      this.emitStatus({ mode: 'local', state: 'idle', roomCode: '', statusText: 'Same-browser connection disabled' });
+    }
+  }
+
+  /** Backwards-compatible helper for callers that explicitly want to host locally. */
   public hostLocal(): void {
-    this.emitStatus({ mode: 'local', state: 'connected', statusText: 'Hosting a race for the tabs of this browser' });
-    this.becomeHost();
+    this.setLocalModeEnabled(true);
   }
 
   /** Host: change the race settings */
