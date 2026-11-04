@@ -451,6 +451,7 @@ export class MultiplayerSyncManager {
   private channel: BroadcastChannel | null = null;
   private ws: WebSocket | null = null;
   private signalingWs: WebSocket | null = null;
+  private signalingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private rtcPeers = new Map<string, WebRtcPeerEntry>();
   /** ICE can arrive before its OFFER/ANSWER or before setRemoteDescription completes. */
   private pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
@@ -588,6 +589,24 @@ export class MultiplayerSyncManager {
     return code;
   }
 
+  /** PeerServer requires periodic client heartbeats to keep its signaling socket alive. */
+  private keepSignalingAlive(ws: WebSocket): void {
+    const clear = () => {
+      if (this.signalingHeartbeatTimer) {
+        clearInterval(this.signalingHeartbeatTimer);
+        this.signalingHeartbeatTimer = null;
+      }
+    };
+    ws.addEventListener('open', () => {
+      clear();
+      this.signalingHeartbeatTimer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) { clear(); return; }
+        try { ws.send(JSON.stringify({ type: 'HEARTBEAT' })); } catch { clear(); }
+      }, 5000);
+    });
+    ws.addEventListener('close', clear);
+  }
+
   /**
    * Hosts a serverless WebRTC P2P Room using the public PeerJS Cloud Broker (`0.peerjs.com`)
    * and Google Public STUN (`stun:stun.l.google.com:19302`).
@@ -617,6 +636,7 @@ export class MultiplayerSyncManager {
         `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(brokerPeerId)}&token=${encodeURIComponent(token)}`
       );
       this.signalingWs = ws;
+      this.keepSignalingAlive(ws);
 
       ws.onmessage = async (ev) => {
         try {
@@ -681,6 +701,7 @@ export class MultiplayerSyncManager {
         `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(guestBrokerId)}&token=${encodeURIComponent(token)}`
       );
       this.signalingWs = ws;
+      this.keepSignalingAlive(ws);
 
       let brokerOpened = false;
       let guestStage = 'WebSocket connected; awaiting broker OPEN';
@@ -1359,6 +1380,10 @@ export class MultiplayerSyncManager {
   }
 
   private closeSignaling(): void {
+    if (this.signalingHeartbeatTimer) {
+      clearInterval(this.signalingHeartbeatTimer);
+      this.signalingHeartbeatTimer = null;
+    }
     if (this.signalingWs) {
       try {
         this.signalingWs.close();
