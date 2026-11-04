@@ -452,6 +452,8 @@ export class MultiplayerSyncManager {
   private ws: WebSocket | null = null;
   private signalingWs: WebSocket | null = null;
   private rtcPeers = new Map<string, WebRtcPeerEntry>();
+  /** ICE can arrive before its OFFER/ANSWER or before setRemoteDescription completes. */
+  private pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
   private manualPendingPc: RTCPeerConnection | null = null;
 
   private peers = new Map<string, PeerSnapshotBuffer>();
@@ -624,10 +626,7 @@ export class MultiplayerSyncManager {
           } else if (msg.type === 'OFFER' && msg.src && msg.payload?.sdp) {
             await this.handleBrokerOffer(msg.src, msg.payload.sdp, msg.payload.connectionId);
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
-            const entry = this.rtcPeers.get(msg.src);
-            if (entry) {
-              await entry.pc.addIceCandidate(new RTCIceCandidate(msg.payload.candidate));
-            }
+            await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
           }
         } catch {
           // Ignore malformed broker message
@@ -715,14 +714,10 @@ export class MultiplayerSyncManager {
               await entry.pc.setRemoteDescription(
                 new RTCSessionDescription(msg.payload.sdp)
               );
+              await this.flushRemoteIceCandidates(msg.src, entry.pc);
             }
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
-            const entry = this.rtcPeers.get(msg.src);
-            if (entry) {
-              await entry.pc.addIceCandidate(
-                new RTCIceCandidate(msg.payload.candidate)
-              );
-            }
+            await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
           }
         } catch {
           // Ignore signaling parse error
@@ -754,6 +749,7 @@ export class MultiplayerSyncManager {
     pc.ondatachannel = (ev) => this.acceptChannel(entry, ev.channel);
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    await this.flushRemoteIceCandidates(remoteId, pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -769,6 +765,35 @@ export class MultiplayerSyncManager {
           },
         })
       );
+    }
+  }
+
+  /** Buffer trickled ICE until the peer exists and its remote SDP is installed. */
+  private async addRemoteIceCandidate(remoteId: string, candidate: RTCIceCandidateInit): Promise<void> {
+    const entry = this.rtcPeers.get(remoteId);
+    if (!entry || !entry.pc.remoteDescription) {
+      const pending = this.pendingIceCandidates.get(remoteId) ?? [];
+      pending.push(candidate);
+      this.pendingIceCandidates.set(remoteId, pending);
+      return;
+    }
+    try {
+      await entry.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch {
+      // Ignore an invalid/stale candidate; the remaining candidates may still connect.
+    }
+  }
+
+  private async flushRemoteIceCandidates(remoteId: string, pc: RTCPeerConnection): Promise<void> {
+    const pending = this.pendingIceCandidates.get(remoteId);
+    if (!pending?.length) return;
+    this.pendingIceCandidates.delete(remoteId);
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // Ignore an invalid/stale candidate; keep processing the rest.
+      }
     }
   }
 
@@ -1209,7 +1234,7 @@ export class MultiplayerSyncManager {
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await this.waitForIceGathering(pc, 1800);
+    await this.waitForIceGathering(pc, 10000);
 
     const token = btoa(JSON.stringify(pc.localDescription));
     this.emitStatus({
@@ -1238,7 +1263,7 @@ export class MultiplayerSyncManager {
     await pc.setRemoteDescription(new RTCSessionDescription(offerDesc));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    await this.waitForIceGathering(pc, 1800);
+    await this.waitForIceGathering(pc, 10000);
 
     const answerToken = btoa(JSON.stringify(pc.localDescription));
     this.emitStatus({
@@ -1260,8 +1285,8 @@ export class MultiplayerSyncManager {
     );
     this.emitStatus({
       mode: 'manual_sdp',
-      state: 'connected',
-      statusText: 'Manual WebRTC P2P Handshake Complete!',
+      state: 'signaling',
+      statusText: 'Answer accepted — waiting for the WebRTC data channel to connect...',
     });
   }
 
