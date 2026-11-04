@@ -592,6 +592,8 @@ export class MultiplayerSyncManager {
   /** PeerServer requires periodic client heartbeats to keep its signaling socket alive. */
   private keepSignalingAlive(ws: WebSocket): void {
     const clear = () => {
+      // A late close event from a replaced socket must not clear the new socket's heartbeat.
+      if (this.signalingWs !== ws) return;
       if (this.signalingHeartbeatTimer) {
         clearInterval(this.signalingHeartbeatTimer);
         this.signalingHeartbeatTimer = null;
