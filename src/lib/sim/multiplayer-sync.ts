@@ -911,16 +911,16 @@ export class MultiplayerSyncManager {
         const neverOpened = !entry?.dc || entry.dc.readyState !== 'open';
         this.rtcPeers.delete(remoteId);
         if (entry?.gamePeerId) this.dropMember(entry.gamePeerId);
-        const strictNat = pc.connectionState === 'failed' && neverOpened;
+        const connectionFailedBeforeChannel = pc.connectionState === 'failed' && neverOpened;
         this.emitStatus({
-          state: this.rtcPeers.size > 0 ? 'connected' : strictNat ? 'error' : 'signaling',
+          state: this.rtcPeers.size > 0 ? 'connected' : connectionFailedBeforeChannel ? 'error' : 'signaling',
           statusText:
             this.rtcPeers.size > 0
               ? `WebRTC P2P Connected (${this.rtcPeers.size} peer)`
-              : strictNat
+              : connectionFailedBeforeChannel
                 ? hasTurnServer()
-                  ? 'Could not connect, even through the TURN relay. Check the TURN details, or try the same Wi-Fi.'
-                  : 'Could not connect directly (strict NAT / mobile network). Add a TURN relay under Advanced, or use the same Wi-Fi.'
+                  ? 'WebRTC could not establish a connection, even with TURN. Check the TURN server details, and check that neither device is on a guest Wi-Fi network or isolated by the router.'
+                  : 'WebRTC could not establish a direct connection. Same Wi-Fi should usually work; check guest Wi-Fi, router client/AP isolation, VPNs, and firewall settings. TURN may help, but this error does not prove strict NAT.'
                 : 'Peer Disconnected • Waiting for Reconnection',
         });
       }
