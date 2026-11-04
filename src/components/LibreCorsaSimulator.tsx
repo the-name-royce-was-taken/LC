@@ -704,7 +704,7 @@ export const LibreCorsaSimulator: React.FC<LibreCorsaSimulatorProps> = ({ trackI
     return true;
   }, []);
 
-  const handleHostLocal = useCallback(() => getMultiplayerManager().hostLocal(), []);
+  const handleToggleLocalMode = useCallback((enabled: boolean) => getMultiplayerManager().setLocalModeEnabled(enabled), []);
   const handleSetLobbySettings = useCallback((patch: Partial<LobbySettings>) => getMultiplayerManager().setLobbySettings(patch), []);
   const handleSetReady = useCallback((ready: boolean) => getMultiplayerManager().setReady(ready), []);
   const handleStartMpRace = useCallback(() => {
@@ -3074,7 +3074,7 @@ export const LibreCorsaSimulator: React.FC<LibreCorsaSimulatorProps> = ({ trackI
     vehicleLabel,
     vehiclesForClass,
     raceRunning: mpRaceRunning,
-    onHostLocal: handleHostLocal,
+    onToggleLocalMode: handleToggleLocalMode,
     onSetLobbySettings: handleSetLobbySettings,
     onSetReady: handleSetReady,
     onStartRace: handleStartMpRace,
