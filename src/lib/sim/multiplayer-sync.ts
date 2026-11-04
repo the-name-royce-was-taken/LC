@@ -688,10 +688,14 @@ export class MultiplayerSyncManager {
       ws.onopen = () => {
         this.emitStatus({ state: 'signaling', statusText: 'WebSocket connected — registering guest with signaling broker...' });
       };
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         clearTimeout(brokerOpenTimer);
         if (this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state !== 'connected') {
-          this.emitStatus({ state: 'error', statusText: 'Signaling broker closed the guest connection before WebRTC connected.' });
+          const reason = event.reason ? ` Reason: ${event.reason.slice(0, 160)}` : '';
+          this.emitStatus({
+            state: 'error',
+            statusText: `Signaling broker closed the guest connection before WebRTC connected (code ${event.code}, ${event.wasClean ? 'clean' : 'unclean'}).${reason}`,
+          });
         }
       };
       ws.onmessage = async (ev) => {
