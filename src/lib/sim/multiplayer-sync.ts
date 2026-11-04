@@ -650,9 +650,12 @@ export class MultiplayerSyncManager {
             await this.handleBrokerOffer(msg.src, msg.payload.sdp, msg.payload.connectionId);
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
             await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
+          } else if (msg.type === 'ERROR') {
+            this.emitStatus({ state: 'error', statusText: `Signaling broker error: ${String(msg.payload?.msg ?? 'unknown broker error').slice(0, 180)}` });
           }
-        } catch {
-          // Ignore malformed broker message
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.emitStatus({ state: 'error', statusText: `Host signaling error: ${detail.slice(0, 180)}` });
         }
       };
 
@@ -769,9 +772,14 @@ export class MultiplayerSyncManager {
             }
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
             await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
+          } else if (msg.type === 'ERROR') {
+            this.emitStatus({ state: 'error', statusText: `Signaling broker error: ${String(msg.payload?.msg ?? 'unknown broker error').slice(0, 180)}` });
+          } else if (msg.type === 'EXPIRE' || msg.type === 'LEAVE') {
+            this.emitStatus({ state: 'error', statusText: `Signaling broker reported ${msg.type}: the host may have left or the offer expired.` });
           }
-        } catch {
-          // Ignore signaling parse error
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.emitStatus({ state: 'error', statusText: `Guest signaling error: ${detail.slice(0, 180)}` });
         }
       };
 
