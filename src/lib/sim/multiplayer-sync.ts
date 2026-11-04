@@ -449,6 +449,8 @@ const AXIS_Y = new THREE.Vector3(0, 1, 0);
 export class MultiplayerSyncManager {
   public readonly localPeerId: string;
   private channel: BroadcastChannel | null = null;
+  /** BroadcastChannel is opt-in; room-code/WebRTC must work independently of same-browser play. */
+  private localModeEnabled = false;
   private ws: WebSocket | null = null;
   private signalingWs: WebSocket | null = null;
   private signalingHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -535,10 +537,11 @@ export class MultiplayerSyncManager {
   }
 
   private openBroadcastChannel(): void {
-    if (typeof window === 'undefined' || !('BroadcastChannel' in window) || this.channel) return;
+    if (!this.localModeEnabled || typeof window === 'undefined' || !('BroadcastChannel' in window) || this.channel) return;
     try {
       this.channel = new BroadcastChannel('kigali_f1_sim_net_v1');
       this.channel.onmessage = (ev: MessageEvent<NetworkVehiclePacket | ControlEnvelope>) => {
+        if (!this.localModeEnabled) return;
         const data = ev.data as Partial<ControlEnvelope> & Partial<NetworkVehiclePacket>;
         if (!data || typeof data !== 'object') return;
         if (data.ctl) {
@@ -555,7 +558,7 @@ export class MultiplayerSyncManager {
   private initTransports(): void {
     if (typeof window === 'undefined') return;
 
-    this.openBroadcastChannel();
+    // Same-browser transport is deliberately not initialized until its UI toggle is enabled.
 
     const wsUrl = process.env.NEXT_PUBLIC_SIM_WS_URL;
     if (wsUrl) {
@@ -1036,10 +1039,17 @@ export class MultiplayerSyncManager {
   /** Enables or disables same-browser play without changing the room-code or manual WebRTC transports. */
   public setLocalModeEnabled(enabled: boolean): void {
     if (enabled) {
+      this.localModeEnabled = true;
       this.openBroadcastChannel();
       this.emitStatus({ mode: 'local', state: 'connected', roomCode: '', statusText: 'Same-browser connection enabled' });
       this.becomeHost();
       return;
+    }
+    this.localModeEnabled = false;
+    if (this.channel) {
+      this.channel.onmessage = null;
+      this.channel.close();
+      this.channel = null;
     }
     if (this.status.mode === 'local') {
       this.becomeGuest();
