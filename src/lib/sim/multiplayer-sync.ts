@@ -680,6 +680,7 @@ export class MultiplayerSyncManager {
       this.signalingWs = ws;
 
       let brokerOpened = false;
+      let guestStage = 'WebSocket connected; awaiting broker OPEN';
       const brokerOpenTimer = setTimeout(() => {
         if (!brokerOpened && this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state === 'signaling') {
           this.emitStatus({ state: 'error', statusText: 'Guest could not register with the signaling broker (no OPEN response). Check the network, VPN, firewall, or browser extensions.' });
@@ -688,10 +689,14 @@ export class MultiplayerSyncManager {
       ws.onopen = () => {
         this.emitStatus({ state: 'signaling', statusText: 'WebSocket connected — registering guest with signaling broker...' });
       };
-      ws.onclose = () => {
+      ws.onclose = (event: CloseEvent) => {
         clearTimeout(brokerOpenTimer);
         if (this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state !== 'connected') {
-          this.emitStatus({ state: 'error', statusText: 'Signaling broker closed the guest connection before WebRTC connected.' });
+          const reason = event.reason ? ` Reason: ${event.reason.slice(0, 160)}` : '';
+          this.emitStatus({
+            state: 'error',
+            statusText: `Signaling broker closed the guest connection at stage "${guestStage}" (code ${event.code}, ${event.wasClean ? 'clean' : 'unclean'}).${reason}`,
+          });
         }
       };
       ws.onmessage = async (ev) => {
@@ -699,6 +704,7 @@ export class MultiplayerSyncManager {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'OPEN') {
             brokerOpened = true;
+            guestStage = 'broker OPEN received; creating WebRTC offer';
             clearTimeout(brokerOpenTimer);
             this.emitStatus({ state: 'signaling', statusText: 'Guest registered with signaling broker — creating WebRTC offer...' });
             const pc = this.createPeerConnection(hostBrokerId, connId);
@@ -726,6 +732,7 @@ export class MultiplayerSyncManager {
                 },
               })
             );
+            guestStage = 'WebRTC offer sent; waiting for host answer';
             this.emitStatus({ state: 'signaling', statusText: 'WebRTC offer sent — waiting for host answer...' });
           } else if (msg.type === 'ANSWER' && msg.src && msg.payload?.sdp) {
             const entry = this.rtcPeers.get(msg.src);
