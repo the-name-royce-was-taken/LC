@@ -664,6 +664,15 @@ export class MultiplayerSyncManager {
         }
       };
 
+      ws.onclose = (event: CloseEvent) => {
+        if (this.status.mode === 'room_host' && this.status.roomCode === roomCode) {
+          const reason = event.reason ? ` Reason: ${event.reason.slice(0, 160)}` : '';
+          this.emitStatus({
+            state: 'error',
+            statusText: `Host signaling socket closed (code ${event.code}, ${event.wasClean ? 'clean' : 'unclean'}).${reason}`,
+          });
+        }
+      };
       ws.onerror = () => {
         this.emitStatus({
           state: 'error',
@@ -723,7 +732,7 @@ export class MultiplayerSyncManager {
       };
       ws.onclose = (event: CloseEvent) => {
         clearTimeout(brokerOpenTimer);
-        if (this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state !== 'connected') {
+        if (this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state === 'signaling') {
           const reason = event.reason ? ` Reason: ${event.reason.slice(0, 160)}` : '';
           this.emitStatus({
             state: 'error',
@@ -760,7 +769,10 @@ export class MultiplayerSyncManager {
                 payload: {
                   sdp: pc.localDescription,
                   type: 'data',
+                  label: STATE_CHANNEL,
                   connectionId: connId,
+                  reliable: false,
+                  serialization: 'json',
                 },
               })
             );
