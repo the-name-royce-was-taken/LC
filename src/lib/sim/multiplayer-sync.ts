@@ -679,10 +679,28 @@ export class MultiplayerSyncManager {
       );
       this.signalingWs = ws;
 
+      let brokerOpened = false;
+      const brokerOpenTimer = setTimeout(() => {
+        if (!brokerOpened && this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state === 'signaling') {
+          this.emitStatus({ state: 'error', statusText: 'Guest could not register with the signaling broker (no OPEN response). Check the network, VPN, firewall, or browser extensions.' });
+        }
+      }, 12000);
+      ws.onopen = () => {
+        this.emitStatus({ state: 'signaling', statusText: 'WebSocket connected — registering guest with signaling broker...' });
+      };
+      ws.onclose = () => {
+        clearTimeout(brokerOpenTimer);
+        if (this.status.mode === 'room_guest' && this.status.roomCode === roomCode && this.status.state !== 'connected') {
+          this.emitStatus({ state: 'error', statusText: 'Signaling broker closed the guest connection before WebRTC connected.' });
+        }
+      };
       ws.onmessage = async (ev) => {
         try {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'OPEN') {
+            brokerOpened = true;
+            clearTimeout(brokerOpenTimer);
+            this.emitStatus({ state: 'signaling', statusText: 'Guest registered with signaling broker — creating WebRTC offer...' });
             const pc = this.createPeerConnection(hostBrokerId, connId);
             const dc = pc.createDataChannel(STATE_CHANNEL, {
               ordered: false,
@@ -708,6 +726,7 @@ export class MultiplayerSyncManager {
                 },
               })
             );
+            this.emitStatus({ state: 'signaling', statusText: 'WebRTC offer sent — waiting for host answer...' });
           } else if (msg.type === 'ANSWER' && msg.src && msg.payload?.sdp) {
             const entry = this.rtcPeers.get(msg.src);
             if (entry) {
@@ -715,6 +734,7 @@ export class MultiplayerSyncManager {
                 new RTCSessionDescription(msg.payload.sdp)
               );
               await this.flushRemoteIceCandidates(msg.src, entry.pc);
+              this.emitStatus({ state: 'signaling', statusText: 'Host answer received — establishing ICE connection...' });
             }
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
             await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
@@ -725,10 +745,8 @@ export class MultiplayerSyncManager {
       };
 
       ws.onerror = () => {
-        this.emitStatus({
-          state: 'error',
-          statusText: 'Broker Error — Use Manual SDP Copy-Paste Fallback',
-        });
+        clearTimeout(brokerOpenTimer);
+        this.emitStatus({ state: 'error', statusText: 'Guest could not reach the signaling broker. Check network/VPN/firewall settings.' });
       };
     } catch {
       this.emitStatus({
@@ -743,6 +761,7 @@ export class MultiplayerSyncManager {
     sdp: RTCSessionDescriptionInit,
     connectionId: string
   ): Promise<void> {
+    this.emitStatus({ state: 'signaling', statusText: 'Host received guest offer — creating answer...' });
     const pc = this.createPeerConnection(remoteId, connectionId);
     const entry: WebRtcPeerEntry = { remoteId, pc, dc: null };
     this.rtcPeers.set(remoteId, entry);
@@ -765,6 +784,9 @@ export class MultiplayerSyncManager {
           },
         })
       );
+      this.emitStatus({ state: 'signaling', statusText: 'Host sent answer — waiting for guest ICE/data channel...' });
+    } else {
+      this.emitStatus({ state: 'error', statusText: 'Host created an answer but signaling socket is not open.' });
     }
   }
 
