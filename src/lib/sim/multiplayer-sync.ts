@@ -720,7 +720,7 @@ export class MultiplayerSyncManager {
 
     try {
       const ws = new WebSocket(
-        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(guestBrokerId)}&token=${encodeURIComponent(token)}`
+        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(guestBrokerId)}&token=${encodeURIComponent(token)}&version=${PEERJS_CLIENT_VERSION}`
       );
       this.signalingWs = ws;
       this.keepSignalingAlive(ws);
