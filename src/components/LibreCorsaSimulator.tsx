@@ -45,6 +45,7 @@ import {
   type RaceStartInfo,
 } from "@/lib/sim/multiplayer-sync";
 import { MultiplayerRace } from "@/lib/sim/race-session";
+import MultiplayerDiagnosticsOverlay from "@/components/MultiplayerDiagnosticsOverlay";
 import { GhostPlayer, LapRecorder } from "@/lib/sim/lap-recorder";
 import { ReplayBuffer } from "@/lib/sim/replay-buffer";
 import type { LapRecording, LapSummaryData, LeaderboardEntry, ReplayCarState } from "@/lib/sim/lap-types";
@@ -3113,6 +3114,7 @@ export const LibreCorsaSimulator: React.FC<LibreCorsaSimulatorProps> = ({ trackI
       }}
     >
       <div ref={containerRef} className="h-full w-full" />
+      <MultiplayerDiagnosticsOverlay />
 
       {phase === "driving" ? (
         <F1TelemetryHud
