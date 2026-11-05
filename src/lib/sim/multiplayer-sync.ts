@@ -19,6 +19,18 @@ import * as THREE from 'three';
 import type { TireCompound, VehicleModelId } from '@/types/f1';
 import { sanitizeWeatherSync, type WeatherSyncState } from './weather';
 
+
+export type MultiplayerDiagnosticEntry = { time: string; level: 'info' | 'warn' | 'error'; message: string; details?: string };
+const diagnosticListeners = new Set<(entry: MultiplayerDiagnosticEntry) => void>();
+export function logMultiplayerDiagnostic(message: string, level: MultiplayerDiagnosticEntry['level'] = 'info', details?: unknown): void {
+  const entry: MultiplayerDiagnosticEntry = { time: new Date().toISOString(), level, message, details: details === undefined ? undefined : (typeof details === 'string' ? details : JSON.stringify(details)) };
+  diagnosticListeners.forEach((listener) => listener(entry));
+}
+export function subscribeMultiplayerDiagnostics(listener: (entry: MultiplayerDiagnosticEntry) => void): () => void {
+  diagnosticListeners.add(listener);
+  return () => diagnosticListeners.delete(listener);
+}
+
 const PEER_VEHICLES: readonly VehicleModelId[] = ['vf26', 'f12026-car', 'amg-gt3'];
 const PEER_COMPOUNDS: readonly TireCompound[] = ['soft', 'medium', 'hard', 'intermediate', 'wet'];
 /** Network input is untrusted: only a known model id is kept */
@@ -523,6 +535,7 @@ export class MultiplayerSyncManager {
   }
 
   private emitStatus(patch: Partial<P2PConnectionStatus>): void {
+    logMultiplayerDiagnostic(`Status: ${patch.state ?? this.status.state} — ${patch.statusText ?? this.status.statusText}`, patch.state === 'error' ? 'error' : 'info', patch);
     let openCount = 0;
     for (const entry of this.rtcPeers.values()) {
       if (entry.dc && entry.dc.readyState === 'open') {
@@ -670,6 +683,7 @@ export class MultiplayerSyncManager {
       };
 
       ws.onclose = (event: CloseEvent) => {
+        logMultiplayerDiagnostic('PeerJS signaling WebSocket closed', event.wasClean ? 'warn' : 'error', { code: event.code, clean: event.wasClean, reason: event.reason, readyState: ws.readyState });
         if (this.status.mode === 'room_host' && this.status.roomCode === roomCode) {
           const reason = event.reason ? ` Reason: ${event.reason.slice(0, 160)}` : '';
           this.emitStatus({
@@ -679,6 +693,7 @@ export class MultiplayerSyncManager {
         }
       };
       ws.onerror = () => {
+        logMultiplayerDiagnostic('PeerJS signaling WebSocket error (browser does not expose handshake details)', 'error', { readyState: ws.readyState });
         this.emitStatus({
           state: 'error',
           statusText: 'Public Broker Unreachable — Use Manual SDP Copy/Paste Below',
@@ -733,6 +748,7 @@ export class MultiplayerSyncManager {
         }
       }, 12000);
       ws.onopen = () => {
+        logMultiplayerDiagnostic('PeerJS signaling WebSocket opened');
         this.emitStatus({ state: 'signaling', statusText: 'WebSocket connected — registering guest with signaling broker...' });
       };
       ws.onclose = (event: CloseEvent) => {
@@ -764,8 +780,10 @@ export class MultiplayerSyncManager {
             this.bindDataChannel(hostBrokerId, dc);
             this.bindControlChannel(entry, ctl);
 
+            logMultiplayerDiagnostic('Creating WebRTC offer', 'info', { configuredIceServers: iceServers().map((server) => server.urls) });
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            logMultiplayerDiagnostic('Local SDP offer set', 'info', { type: pc.localDescription?.type, iceGatheringState: pc.iceGatheringState });
 
             ws.send(
               JSON.stringify({
@@ -831,9 +849,12 @@ export class MultiplayerSyncManager {
     pc.ondatachannel = (ev) => this.acceptChannel(entry, ev.channel);
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    logMultiplayerDiagnostic('Remote SDP offer accepted', 'info', { signalingState: pc.signalingState, iceConnectionState: pc.iceConnectionState });
     await this.flushRemoteIceCandidates(remoteId, pc);
+    logMultiplayerDiagnostic('Creating WebRTC answer');
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    logMultiplayerDiagnostic('Local SDP answer set', 'info', { type: pc.localDescription?.type, iceGatheringState: pc.iceGatheringState });
 
     if (this.signalingWs && this.signalingWs.readyState === WebSocket.OPEN) {
       this.signalingWs.send(
@@ -889,6 +910,8 @@ export class MultiplayerSyncManager {
     const pc = new RTCPeerConnection({ iceServers: iceServers() });
 
     pc.onicecandidate = (ev) => {
+      if (ev.candidate) logMultiplayerDiagnostic('ICE candidate gathered', 'info', { type: ev.candidate.type, protocol: ev.candidate.protocol, address: ev.candidate.address, port: ev.candidate.port });
+      else logMultiplayerDiagnostic('ICE candidate gathering complete');
       if (
         ev.candidate &&
         this.signalingWs &&
@@ -909,6 +932,7 @@ export class MultiplayerSyncManager {
     };
 
     pc.onconnectionstatechange = () => {
+      logMultiplayerDiagnostic('WebRTC connection state changed', pc.connectionState === 'failed' ? 'error' : 'info', { connectionState: pc.connectionState, iceConnectionState: pc.iceConnectionState, iceGatheringState: pc.iceGatheringState, signalingState: pc.signalingState });
       if (
         pc.connectionState === 'disconnected' ||
         pc.connectionState === 'failed' ||
@@ -969,12 +993,14 @@ export class MultiplayerSyncManager {
 
   private bindDataChannel(remoteId: string, dc: RTCDataChannel): void {
     dc.onopen = () => {
+      logMultiplayerDiagnostic('WebRTC data channel opened', 'info', { label: dc.label, ordered: dc.ordered });
       this.emitStatus({
         state: 'connected',
         statusText: `WebRTC DataChannel Connected (25 Hz Unordered UDP)`,
       });
     };
     dc.onclose = () => {
+      logMultiplayerDiagnostic('WebRTC data channel closed', 'warn', { label: dc.label, readyState: dc.readyState });
       const gone = this.rtcPeers.get(remoteId)?.gamePeerId;
       this.rtcPeers.delete(remoteId);
       if (gone) this.dropMember(gone);
