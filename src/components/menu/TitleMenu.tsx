@@ -13,7 +13,7 @@ import { ACTIVE_TRACK_ID, BASE_ALTITUDE_M, getTrackData, TRACK_TOTAL_LENGTH_M, T
 import { getTrackInfo, RWANDA_TRACK_ID, TRACKS, type TrackInfo } from "@/lib/track-registry";
 import { SCENERY_CREDITS } from "@/lib/render/scenery-credits";
 import { isLikelyWheel, padDisplayName } from "@/lib/input/device-input";
-import type { HudPreset } from "@/lib/settings/player-settings";
+import { codeFromName, sanitizeDriverName, type HudPreset } from "@/lib/settings/player-settings";
 import { useGamepads, type PadState } from "./useMenuNav";
 import { focusInZone, focusOnHover, useFocusNav } from "./useFocusNav";
 import { useInputMode } from "./input-mode";
@@ -36,11 +36,12 @@ import {
   Route,
   Timer,
   Users,
+  UserRound,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 
-type TitlePanel = "circuit" | "conditions" | "garage" | "multiplayer" | "leaderboard" | "display" | "credits" | "request";
+type TitlePanel = "circuit" | "conditions" | "garage" | "multiplayer" | "leaderboard" | "display" | "profile" | "credits" | "request";
 
 export interface TitleMenuProps extends PauseMenuProps {
   firstRun: boolean;
@@ -530,6 +531,51 @@ const CompactEntry: React.FC<{ item: MenuItem; open: boolean; quiet?: boolean }>
   );
 };
 
+/** A focused driver profile editor, kept on the title screen and never shown over a race. */
+const ProfilePanel: React.FC<{
+  profile: { name: string; code: string; color: string; generated: boolean };
+  onSave: (name: string) => void;
+}> = ({ profile, onSave }) => {
+  const [draft, setDraft] = useState(profile.name);
+  const clean = sanitizeDriverName(draft);
+  const changed = clean !== profile.name;
+  return (
+    <form
+      className="flex max-w-[560px] flex-col gap-5 rounded-[22px] border border-[#262B3D] bg-[#08090D]/60 p-5"
+      onSubmit={(event) => { event.preventDefault(); onSave(clean); }}
+    >
+      <div className="flex items-center gap-3">
+        <span className="h-10 w-10 rounded-full" style={{ background: profile.color }} />
+        <div className="min-w-0">
+          <p className="m-0 font-f1-mono text-[11px] font-extrabold tracking-[0.14em] text-[#CCFF00] uppercase">Driver profile</p>
+          <p className="m-0 truncate text-[13px] text-[#8E96AA]">Your name is shown to other racers and on leaderboards.</p>
+        </div>
+      </div>
+      <label className="flex flex-col gap-2">
+        <span className="font-f1-mono text-[11px] font-extrabold tracking-[0.12em] text-[#8E96AA] uppercase">Username</span>
+        <input
+          autoFocus
+          type="text"
+          maxLength={16}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="h-12 rounded-xl border border-[#3A4157] bg-[#11131A] px-4 text-[16px] font-semibold text-[#F5F7FA] outline-none focus:border-[#CCFF00]"
+          aria-label="Username"
+        />
+        <span className="text-right font-f1-mono text-[10px] text-[#8E96AA]">{clean.length}/16 characters</span>
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="font-f1-mono text-[11px] font-bold tracking-[0.12em] text-[#8E96AA]">DRIVER CODE · {changed ? codeFromName(clean) : profile.code}</span>
+        <button
+          type="submit"
+          disabled={!changed}
+          className="h-10 rounded-full bg-[#CCFF00] px-5 font-f1-mono text-[11px] font-extrabold tracking-[0.12em] text-[#08090D] transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+        >Save username</button>
+      </div>
+    </form>
+  );
+};
+
 /** Controller / wheel / keyboard status pill */
 const DevicePill: React.FC<{ pad: PadState | undefined; slim?: boolean }> = ({ pad, slim }) => {
   const kind = pad ? (isLikelyWheel(pad) ? "Wheel" : "Controller") : "Keyboard";
@@ -652,6 +698,9 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
     ...(props.displayPanel
       ? [{ id: "display", label: "Display", detail: "HUD, graphics, touch, VR", icon: MonitorCog, panel: "display" as const, run: () => openPanel("display") }]
       : []),
+    ...(props.displayPanel
+      ? [{ id: "profile", label: "Profile", detail: "Choose the username other racers see", icon: UserRound, panel: "profile" as const, run: () => openPanel("profile") }]
+      : []),
     { id: "controls", label: "Controls", detail: "Keyboard, controller or wheel", icon: Gamepad2, run: onControls },
     { id: "credits", label: "Credits", detail: "Open-source sim · asset sources", icon: Info, panel: "credits", run: () => openPanel("credits") },
     {
@@ -689,6 +738,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
     multiplayer: { kicker: "WebRTC peer-to-peer" },
     leaderboard: { kicker: `Leaderboard · ${props.leaderboardPanel?.trackName ?? track.name}`, color: "#CCFF00" },
     display: { kicker: "HUD, graphics, touch, VR" },
+    profile: { kicker: "Your driver identity", color: "#CCFF00" },
     credits: { kicker: "About LibreCorsa & credits" },
     request: { kicker: "Suggest new content" },
   };
@@ -767,7 +817,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
                 <CompactEntry key={item.id} item={item} open={item.panel === panel} />
               ))}
               <div aria-hidden className="mx-3.5 my-2 h-px bg-[#262B3D]" />
-              {byId(["circuit", "conditions", "garage", "leaderboard", "display", "controls"]).map((item) => (
+              {byId(["circuit", "conditions", "garage", "leaderboard", "display", "profile", "controls"]).map((item) => (
                 <CompactEntry key={item.id} item={item} open={item.panel === panel} />
               ))}
               <div aria-hidden className="mx-3.5 my-2 h-px bg-[#262B3D]" />
@@ -790,6 +840,15 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
                   {panel === "multiplayer" ? <MultiplayerPanel {...props} /> : null}
                   {panel === "leaderboard" && props.leaderboardPanel ? <LeaderboardPanel {...props.leaderboardPanel} /> : null}
                   {panel === "display" && props.displayPanel ? <DisplayPanel {...props.displayPanel} /> : null}
+                  {panel === "profile" && props.displayPanel ? (
+                    <ProfilePanel
+                      profile={props.displayPanel.settings.profile}
+                      onSave={(name) => props.displayPanel!.onChangeSettings((prev) => ({
+                        ...prev,
+                        profile: { ...prev.profile, name, code: codeFromName(name), generated: false },
+                      }))}
+                    />
+                  ) : null}
                   {panel === "credits" ? <Credits /> : null}
                   {panel === "request" ? <RequestPanel /> : null}
                 </PanelFrame>
@@ -811,7 +870,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
                 <span className="lc-lbl">Setup</span>
               </div>
               <div className="grid grid-cols-1 gap-1 min-[400px]:grid-cols-2">
-                {byId(["circuit", "conditions", "garage", "controls", "display"]).map((item) => (
+                {byId(["circuit", "conditions", "garage", "controls", "display", "profile"]).map((item) => (
                   <GridEntry key={item.id} item={item} />
                 ))}
               </div>
