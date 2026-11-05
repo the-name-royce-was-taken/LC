@@ -419,6 +419,7 @@ interface WebRtcPeerEntry {
   gamePeerId?: string;
 }
 
+const PEERJS_CLIENT_VERSION = '1.5.5';
 const STATE_CHANNEL = 'f1-telemetry';
 const CONTROL_CHANNEL = 'f1-control';
 
@@ -638,7 +639,7 @@ export class MultiplayerSyncManager {
 
     try {
       const ws = new WebSocket(
-        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(brokerPeerId)}&token=${encodeURIComponent(token)}`
+        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(brokerPeerId)}&token=${encodeURIComponent(token)}&version=${PEERJS_CLIENT_VERSION}`
       );
       this.signalingWs = ws;
       this.keepSignalingAlive(ws);
@@ -655,8 +656,12 @@ export class MultiplayerSyncManager {
             await this.handleBrokerOffer(msg.src, msg.payload.sdp, msg.payload.connectionId);
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
             await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
+          } else if (msg.type === 'ID-TAKEN') {
+            this.emitStatus({ state: 'error', statusText: 'This room code is already being hosted in another session. Choose a new room code, or close the other host tab.' });
           } else if (msg.type === 'ERROR') {
             this.emitStatus({ state: 'error', statusText: `Signaling broker error: ${String(msg.payload?.msg ?? 'unknown broker error').slice(0, 180)}` });
+          } else if (msg.type === 'OFFER') {
+            this.emitStatus({ state: 'error', statusText: 'Signaling broker delivered an incomplete guest offer (missing sender or SDP).' });
           }
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
@@ -715,7 +720,7 @@ export class MultiplayerSyncManager {
 
     try {
       const ws = new WebSocket(
-        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(guestBrokerId)}&token=${encodeURIComponent(token)}`
+        `wss://0.peerjs.com/peerjs?key=peerjs&id=${encodeURIComponent(guestBrokerId)}&token=${encodeURIComponent(token)}&version=${PEERJS_CLIENT_VERSION}`
       );
       this.signalingWs = ws;
       this.keepSignalingAlive(ws);
@@ -789,6 +794,8 @@ export class MultiplayerSyncManager {
             }
           } else if (msg.type === 'CANDIDATE' && msg.src && msg.payload?.candidate) {
             await this.addRemoteIceCandidate(msg.src, msg.payload.candidate);
+          } else if (msg.type === 'ID-TAKEN') {
+            this.emitStatus({ state: 'error', statusText: 'The signaling broker rejected this guest ID as already in use. Please try joining again.' });
           } else if (msg.type === 'ERROR') {
             this.emitStatus({ state: 'error', statusText: `Signaling broker error: ${String(msg.payload?.msg ?? 'unknown broker error').slice(0, 180)}` });
           } else if (msg.type === 'EXPIRE' || msg.type === 'LEAVE') {
