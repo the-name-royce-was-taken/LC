@@ -698,6 +698,9 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
     ...(props.displayPanel
       ? [{ id: "display", label: "Display", detail: "HUD, graphics, touch, VR", icon: MonitorCog, panel: "display" as const, run: () => openPanel("display") }]
       : []),
+    ...(props.displayPanel
+      ? [{ id: "profile", label: "Profile", detail: "Choose the username other racers see", icon: UserRound, panel: "profile" as const, run: () => openPanel("profile") }]
+      : []),
     { id: "controls", label: "Controls", detail: "Keyboard, controller or wheel", icon: Gamepad2, run: onControls },
     { id: "credits", label: "Credits", detail: "Open-source sim · asset sources", icon: Info, panel: "credits", run: () => openPanel("credits") },
     {
@@ -735,6 +738,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
     multiplayer: { kicker: "WebRTC peer-to-peer" },
     leaderboard: { kicker: `Leaderboard · ${props.leaderboardPanel?.trackName ?? track.name}`, color: "#CCFF00" },
     display: { kicker: "HUD, graphics, touch, VR" },
+    profile: { kicker: "Your driver identity", color: "#CCFF00" },
     credits: { kicker: "About LibreCorsa & credits" },
     request: { kicker: "Suggest new content" },
   };
@@ -835,7 +839,16 @@ export const TitleMenu: React.FC<TitleMenuProps> = (props) => {
                   {panel === "garage" ? <EngineersGarage {...props} /> : null}
                   {panel === "multiplayer" ? <MultiplayerPanel {...props} /> : null}
                   {panel === "leaderboard" && props.leaderboardPanel ? <LeaderboardPanel {...props.leaderboardPanel} /> : null}
-                  {panel === "display" && props.displayPanel ? <DisplayPanel {...props.displayPanel} /> : null}\n                  {panel === "profile" && props.displayPanel ? (\n                    <ProfilePanel\n                      profile={props.displayPanel.settings.profile}\n                      onSave={(name) => props.displayPanel?.onChangeSettings((prev) => ({\n                        ...prev,\n                        profile: { ...prev.profile, name, code: codeFromName(name), generated: false },\n                      }))}\n                    />\n                  ) : null}
+                  {panel === "display" && props.displayPanel ? <DisplayPanel {...props.displayPanel} /> : null}
+                  {panel === "profile" && props.displayPanel ? (
+                    <ProfilePanel
+                      profile={props.displayPanel.settings.profile}
+                      onSave={(name) => props.displayPanel!.onChangeSettings((prev) => ({
+                        ...prev,
+                        profile: { ...prev.profile, name, code: codeFromName(name), generated: false },
+                      }))}
+                    />
+                  ) : null}
                   {panel === "credits" ? <Credits /> : null}
                   {panel === "request" ? <RequestPanel /> : null}
                 </PanelFrame>
