@@ -79,7 +79,7 @@ const SHADOW_DISTANCE_M = 250;
 
 const SKY_SCALE = 4500;
 /** Linear radiance cap for the visible sun disc (bloom threshold is 1.1) */
-const SUN_DISC_MAX_RADIANCE = 8;
+const SUN_DISC_MAX_RADIANCE = 3.5;
 /** Brings the Sky shader's radiance to this scene's exposure (applies to the PMREM bake too) */
 const SKY_RADIANCE_SCALE = 0.12;
 const ENV_SIZE = 256;
@@ -88,14 +88,14 @@ const ENV_SIZE = 256;
 // It is deliberately uniform (not distance fog) and remains enabled on every quality preset.
 
 const SUN_COLOR = 0xffebd6;
-const SUN_INTENSITY = 3.2;
+const SUN_INTENSITY = 2.6;
 const FILL_SKY = 0xc4d8ee;
 const FILL_GROUND = 0x6b6a3a;
 // Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
-const AMBIENT_HAZE_COLOR = 0xcbd6df;
-const AMBIENT_HAZE_OPACITY = 0.085;
+const AMBIENT_HAZE_COLOR = 0xc4ced7;
+const AMBIENT_HAZE_OPACITY = 0.16;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -278,7 +278,7 @@ function colorCurve(keys: readonly Key[], x: number, out: THREE.Color): THREE.Co
 
 // Keys by sun elevation (deg). Each passes through the golden-hour constant at 14 deg.
 const SUN_COLOR_KEYS: readonly Key[] = [[-2, 0xff6a2a], [4, 0xffa262], [14, SUN_COLOR], [35, 0xfff4e8], [70, 0xfff8f2]];
-const SUN_INTENSITY_KEYS: readonly Key[] = [[-3, 0], [1, 0.5], [6, 1.9], [14, SUN_INTENSITY], [35, 3.8], [70, 4.1]];
+const SUN_INTENSITY_KEYS: readonly Key[] = [[-3, 0], [1, 0.4], [6, 1.55], [14, SUN_INTENSITY], [35, 3.1], [70, 3.35]];
 const FILL_INTENSITY_KEYS: readonly Key[] = [[-3, 0.18], [4, 0.34], [14, FILL_INTENSITY], [40, 0.58], [70, 0.62]];
 const ENV_INTENSITY_KEYS: readonly Key[] = [[-3, 0.3], [4, 0.7], [14, 1], [70, 1.1]];
 const EXPOSURE_KEYS: readonly Key[] = [[-3, 1.25], [4, 1.1], [14, EXPOSURE], [35, 0.95], [70, 0.93]];
@@ -507,7 +507,7 @@ class AmbientHazeEffect extends Effect {
       }
     `, {
       blendFunction: BlendFunction.NORMAL,
-      uniforms: new Map([
+      uniforms: new Map<string, THREE.Uniform<any>>([
         ["hazeColor", new THREE.Uniform(new THREE.Color(AMBIENT_HAZE_COLOR))],
         ["hazeOpacity", new THREE.Uniform(AMBIENT_HAZE_OPACITY)],
       ]),
