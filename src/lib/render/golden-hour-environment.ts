@@ -432,7 +432,7 @@ export function createGoldenHourEnvironment(
       void main() {
         vec2 p = gl_PointCoord - 0.5;
         float r = dot(p, p);
-        float softDisc = exp(-r * 22.0) * smoothstep(0.25, 0.02, r);
+        float softDisc = exp(-r * 22.0) * (1.0 - smoothstep(0.02, 0.25, r));
         gl_FragColor = vec4(vec3(0.78, 0.85, 0.91), vAlpha * softDisc);
       }
     `,
