@@ -98,12 +98,29 @@ export class SimVisualFxManager {
     this.group.add(this.skidMesh);
 
     // 2. Initialize Instanced Tire Smoke & Gravel Particles
-    // Smooth, low-poly spheres read as soft smoke puffs without a texture or extra draw calls.
-    const puffGeom = new THREE.SphereGeometry(0.32, 10, 8);
+    // A gently deformed sphere gives each instanced puff an irregular, smoke-like edge.
+    // Geometry is shared by every particle, so this adds no draw calls or per-frame mesh work.
+    const puffGeom = new THREE.SphereGeometry(0.32, 14, 10);
+    const puffPositions = puffGeom.attributes.position as THREE.BufferAttribute;
+    const puffNormal = new THREE.Vector3();
+    for (let vertex = 0; vertex < puffPositions.count; vertex++) {
+      puffNormal.fromBufferAttribute(puffPositions, vertex).normalize();
+      const n = puffNormal;
+      const lobes = 1
+        + 0.14 * Math.sin(n.x * 5.1 + n.y * 2.8) * Math.sin(n.z * 4.7 - n.y * 1.9)
+        + 0.065 * Math.sin(n.y * 8.0 + n.x * 3.3 + n.z * 2.1);
+      puffPositions.setXYZ(vertex,
+        puffPositions.getX(vertex) * lobes,
+        puffPositions.getY(vertex) * lobes,
+        puffPositions.getZ(vertex) * lobes
+      );
+    }
+    puffPositions.needsUpdate = true;
+    puffGeom.computeVertexNormals();
     const puffMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.24,
+      opacity: 0.15,
       depthWrite: false,
     });
     this.particleMesh = new THREE.InstancedMesh(
@@ -225,10 +242,10 @@ export class SimVisualFxManager {
             carForward,
             carUp,
             carSpeedMs,
-            0.35,
-            2.8,
-            0.98,
-            0xd9dce0,
+            0.12,
+            1.15,
+            0.9,
+            0xcbd0d4,
             true
           );
         } else if (w.surfaceType === 'grass' || w.surfaceType === 'runoff') {
@@ -332,16 +349,16 @@ export class SimVisualFxManager {
     p.age = 0;
     p.maxAge = maxAge;
     p.pos.set(
-      wx + (Math.random() - 0.5) * 0.22,
+      wx + (Math.random() - 0.5) * (isSmoke ? 0.12 : 0.22),
       wy,
-      wz + (Math.random() - 0.5) * 0.22
+      wz + (Math.random() - 0.5) * (isSmoke ? 0.12 : 0.22)
     );
     p.vel
       .copy(carForward)
-      .multiplyScalar(carSpeedMs * 0.22)
-      .addScaledVector(carUp, 1.4 + Math.random() * 1.6);
-    p.vel.x += (Math.random() - 0.5) * 1.8;
-    p.vel.z += (Math.random() - 0.5) * 1.8;
+      .multiplyScalar(carSpeedMs * (isSmoke ? 0.12 : 0.22))
+      .addScaledVector(carUp, isSmoke ? 0.55 + Math.random() * 0.65 : 1.4 + Math.random() * 1.6);
+    p.vel.x += (Math.random() - 0.5) * (isSmoke ? 0.65 : 1.8);
+    p.vel.z += (Math.random() - 0.5) * (isSmoke ? 0.65 : 1.8);
     p.scale0 = scale0;
     p.scale1 = scale1;
     p.color.setHex(colorHex);
@@ -369,24 +386,26 @@ export class SimVisualFxManager {
       if (p.isSmoke) {
         // Warm lift and gentle, deterministic turbulence make smoke billow instead of
         // behaving like rigid balls. Keep the motion CPU-cheap and independent per puff.
-        p.vel.y += 0.9 * dt;
-        p.vel.x += Math.sin(p.age * 4.1 + p.pos.z * 0.17) * 0.32 * dt;
-        p.vel.z += Math.cos(p.age * 3.7 + p.pos.x * 0.15) * 0.32 * dt;
+        p.vel.y += 0.42 * dt;
+        p.vel.x += Math.sin(p.age * 3.3 + p.pos.z * 0.21) * 0.2 * dt;
+        p.vel.z += Math.cos(p.age * 3.0 + p.pos.x * 0.19) * 0.2 * dt;
       }
       p.pos.addScaledVector(p.vel, dt);
       p.vel.multiplyScalar(Math.max(0, 1.0 - (p.isSmoke ? 1.65 : 2.2) * dt));
 
       const growth = THREE.MathUtils.lerp(p.scale0, p.scale1, lifeT);
       const lifeEnvelope = p.isSmoke
-        ? 0.16 + 0.84 * Math.pow(Math.sin(Math.PI * lifeT), 0.42)
+        ? 0.12 + 0.88 * Math.pow(Math.sin(Math.PI * lifeT), 0.58)
         : 1.0 - lifeT * 0.35;
       const s = growth * lifeEnvelope;
       this.dummy.position.copy(p.pos);
       if (p.isSmoke) {
         // Smoke expands sideways as it cools and rises, rather than staying spherical.
-        this.dummy.scale.set(Math.max(0.01, s * (1.0 + lifeT * 0.34)), Math.max(0.01, s * (0.82 + lifeT * 0.12)), Math.max(0.01, s * (1.0 + lifeT * 0.34)));
-        const pale = new THREE.Color(0xe8e9e9);
-        p.color.lerp(pale, Math.min(1, lifeT * 0.7));
+        const width = 0.82 + lifeT * 0.3;
+        const height = 0.72 + lifeT * 0.08;
+        this.dummy.scale.set(Math.max(0.01, s * width), Math.max(0.01, s * height), Math.max(0.01, s * (0.88 + lifeT * 0.24)));
+        const pale = new THREE.Color(0xdfe2e4);
+        p.color.lerp(pale, Math.min(1, lifeT * 0.55));
       } else {
         this.dummy.scale.setScalar(Math.max(0.01, s));
       }
