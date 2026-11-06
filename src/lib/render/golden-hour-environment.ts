@@ -507,7 +507,7 @@ class AmbientHazeEffect extends Effect {
       }
     `, {
       blendFunction: BlendFunction.NORMAL,
-      uniforms: new Map([
+      uniforms: new Map<string, THREE.Uniform<any>>([
         ["hazeColor", new THREE.Uniform(new THREE.Color(AMBIENT_HAZE_COLOR))],
         ["hazeOpacity", new THREE.Uniform(AMBIENT_HAZE_OPACITY)],
       ]),
