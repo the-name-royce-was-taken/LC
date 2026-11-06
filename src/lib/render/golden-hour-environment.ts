@@ -197,7 +197,7 @@ function configureSkyUniforms(sky: Sky, showSunDisc: boolean): void {
   u.showSunDisc.value = showSunDisc ? 1 : 0;
   (u.sunPosition.value as THREE.Vector3).copy(sunDirectionUnit());
   u.skyRadianceScale = { value: SKY_RADIANCE_SCALE };
-  // The Sky shader writes HDR values directly; it must not also get scene fog.
+  // The Sky shader writes HDR values directly; no scene fog is used.
   sky.material.fog = false;
   // The stock disc reaches ~60000, which the mipmap bloom smears into a full-screen white haze. Capped, it
   // stays well above the 1.1 bloom threshold and blooms into a halo instead.
@@ -432,13 +432,6 @@ export function createGoldenHourEnvironment(
     fillLight.color.setHex(FILL_SKY).lerp(tint.setHex(OVERCAST_FILL_SKY), cloud);
     fillLight.groundColor.setHex(FILL_GROUND).lerp(tint.setHex(WET_FILL_GROUND), rain);
     fillLight.intensity = curve(FILL_INTENSITY_KEYS, e) * (1 + 1.1 * cloud);
-
-    colorCurve(FOG_COLOR_KEYS, e, fog.color)
-      .lerp(tint.setHex(OVERCAST_FOG), 0.8 * cloud)
-      .lerp(tint.setHex(RAIN_FOG), rain);
-    // A low sun dims the overcast / rain haze too
-    if (cloud > 0 && e < 14) fog.color.multiplyScalar(1 - cloud * (1 - curve(ENV_INTENSITY_KEYS, e)));
-    // Keep the lightweight distance haze subtle; avoid heavy rain fog that can obscure braking markers.\n    fog.density = FOG_DENSITY * (1 + 0.8 * cloud) + 0.0012 * Math.pow(rain, 1.2);
 
     scene.environmentIntensity = curve(ENV_INTENSITY_KEYS, e) * (1 - 0.25 * rain);
     renderer.toneMappingExposure = curve(EXPOSURE_KEYS, e) * (1 + 0.18 * cloud);
