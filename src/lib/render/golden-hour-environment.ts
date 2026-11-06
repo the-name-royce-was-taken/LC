@@ -94,8 +94,8 @@ const FILL_GROUND = 0x6b6a3a;
 // Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
-const AMBIENT_HAZE_COLOR = 0xc4ced7;
-const AMBIENT_HAZE_OPACITY = 0.16;
+const AMBIENT_HAZE_COLOR = 0xb9cbd8;
+const AMBIENT_HAZE_OPACITY = 0.075;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -503,7 +503,13 @@ class AmbientHazeEffect extends Effect {
       uniform float hazeOpacity;
 
       void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-        outputColor = vec4(mix(inputColor.rgb, hazeColor, hazeOpacity), inputColor.a);
+        // Atmospheric perspective is strongest around the horizon and falls away
+        // toward the sky and foreground, avoiding a flat grey wash over the frame.
+        float horizon = exp(-pow((uv.y - 0.46) / 0.30, 2.0));
+        float hazeAmount = hazeOpacity * (0.18 + 0.82 * horizon);
+        vec3 warmHorizon = vec3(0.78, 0.73, 0.66);
+        vec3 atmosphericColor = mix(hazeColor, warmHorizon, horizon * 0.24);
+        outputColor = vec4(mix(inputColor.rgb, atmosphericColor, hazeAmount), inputColor.a);
       }
     `, {
       blendFunction: BlendFunction.NORMAL,
