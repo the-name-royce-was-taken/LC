@@ -96,6 +96,9 @@ const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
 const AMBIENT_HAZE_COLOR = 0xb9cbd8;
 const AMBIENT_HAZE_OPACITY = 0.075;
+/** Small, camera-following motes: deliberately sparse and shadowless. */
+const FOG_PARTICLE_COUNT = 112;
+const FOG_PARTICLE_RADIUS = 72;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -378,6 +381,72 @@ export function createGoldenHourEnvironment(
   scene.environmentIntensity = 1.0;
   scene.background = null;
 
+  // --- Lightweight 3D atmospheric particles --------------------------------
+  // A sparse point cloud follows the camera. Depth testing lets the track and cars
+  // occlude particles naturally; no shadows, textures, or extra render passes.
+  const fogGeometry = new THREE.BufferGeometry();
+  const fogPositions = new Float32Array(FOG_PARTICLE_COUNT * 3);
+  const fogSizes = new Float32Array(FOG_PARTICLE_COUNT);
+  const fogPhases = new Float32Array(FOG_PARTICLE_COUNT);
+  const fogAlphas = new Float32Array(FOG_PARTICLE_COUNT);
+  for (let i = 0; i < FOG_PARTICLE_COUNT; i++) {
+    const i3 = i * 3;
+    // Evenly spread particles through a loose spherical volume around the camera.
+    const y = Math.random() * 2 - 1;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = FOG_PARTICLE_RADIUS * Math.cbrt(Math.random());
+    const ring = Math.sqrt(1 - y * y);
+    fogPositions[i3] = Math.cos(angle) * ring * radius;
+    fogPositions[i3 + 1] = y * radius;
+    fogPositions[i3 + 2] = Math.sin(angle) * ring * radius;
+    fogSizes[i] = 2.0 + Math.random() * 2.2;
+    fogPhases[i] = Math.random() * Math.PI * 2;
+    fogAlphas[i] = 0.035 + Math.random() * 0.055;
+  }
+  fogGeometry.setAttribute("position", new THREE.BufferAttribute(fogPositions, 3));
+  fogGeometry.setAttribute("aSize", new THREE.BufferAttribute(fogSizes, 1));
+  fogGeometry.setAttribute("aPhase", new THREE.BufferAttribute(fogPhases, 1));
+  fogGeometry.setAttribute("aAlpha", new THREE.BufferAttribute(fogAlphas, 1));
+  const fogMaterial = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aPhase;
+      attribute float aAlpha;
+      uniform float uTime;
+      varying float vAlpha;
+      void main() {
+        vec3 p = position;
+        float drift = uTime * 0.16 + aPhase;
+        p.x += sin(drift) * 1.2;
+        p.y += cos(drift * 0.73) * 0.55;
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+        float depth = max(1.0, -mvPosition.z);
+        gl_PointSize = clamp(aSize * (90.0 / depth), 1.0, 4.5);
+        gl_Position = projectionMatrix * mvPosition;
+        vAlpha = aAlpha * smoothstep(1.5, 8.0, depth) * (1.0 - smoothstep(FOG_PARTICLE_FAR, FOG_PARTICLE_FAR + 12.0, depth));
+      }
+    `.replace("FOG_PARTICLE_FAR", String(FOG_PARTICLE_RADIUS)),
+    fragmentShader: `
+      varying float vAlpha;
+      void main() {
+        vec2 p = gl_PointCoord - 0.5;
+        float r = dot(p, p);
+        float softDisc = exp(-r * 22.0) * smoothstep(0.25, 0.02, r);
+        gl_FragColor = vec4(vec3(0.78, 0.85, 0.91), vAlpha * softDisc);
+      }
+    `,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    toneMapped: false,
+  });
+  const fogParticles = new THREE.Points(fogGeometry, fogMaterial);
+  fogParticles.frustumCulled = false;
+  fogParticles.renderOrder = 2;
+  scene.add(fogParticles);
+
   // --- Weak fill ------------------------------------------------------------
   const fillLight = new THREE.HemisphereLight(FILL_SKY, FILL_GROUND, FILL_INTENSITY);
   scene.add(fillLight);
@@ -465,6 +534,8 @@ export function createGoldenHourEnvironment(
 
       camera.getWorldPosition(scratch);
       sky.position.copy(scratch);
+      fogParticles.position.copy(scratch);
+      fogMaterial.uniforms.uTime.value = performance.now() / 1000;
       // Drifting clouds (the Sky shader skips them at zero coverage)
       if (sky.material.uniforms.cloudCoverage.value > 0) sky.material.uniforms.time.value = performance.now() / 1000;
       if (pendingBake && performance.now() - lastBakeMs > REBAKE_MIN_S * 1000) rebake();
@@ -476,7 +547,9 @@ export function createGoldenHourEnvironment(
       if (disposed) return;
       disposed = true;
 
-      scene.remove(sky, fillLight, sunLight);
+      scene.remove(sky, fillLight, sunLight, fogParticles);
+      fogGeometry.dispose();
+      fogMaterial.dispose();
       if (scene.environment === envTarget.texture) scene.environment = null;
 
       sky.geometry.dispose();
