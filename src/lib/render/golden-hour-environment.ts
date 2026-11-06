@@ -6,8 +6,6 @@ import { setSceneryQuality } from "@/lib/render/scenery-detail";
 import { setSceneryDensity } from "@/lib/render/scenery-instances";
 import {
   BloomEffect,
-  BlendFunction,
-  Effect,
   EffectComposer,
   EffectPass,
   RenderPass,
@@ -94,8 +92,6 @@ const FILL_GROUND = 0x6b6a3a;
 // Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
-const AMBIENT_HAZE_COLOR = 0xb9cbd8;
-const AMBIENT_HAZE_OPACITY = 0.075;
 /** Small, camera-following motes: deliberately sparse and shadowless. */
 const FOG_PARTICLE_COUNT = 112;
 const FOG_PARTICLE_RADIUS = 72;
@@ -569,31 +565,6 @@ export function createGoldenHourEnvironment(
  * Uniform atmospheric haze: a single full-screen colour mix, independent of
  * scene depth and graphics preset. This is intentionally not volumetric fog.
  */
-class AmbientHazeEffect extends Effect {
-  constructor() {
-    super("AmbientHazeEffect", `
-      uniform vec3 hazeColor;
-      uniform float hazeOpacity;
-
-      void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-        // Atmospheric perspective is strongest around the horizon and falls away
-        // toward the sky and foreground, avoiding a flat grey wash over the frame.
-        float horizon = exp(-pow((uv.y - 0.46) / 0.30, 2.0));
-        float hazeAmount = hazeOpacity * (0.18 + 0.82 * horizon);
-        vec3 warmHorizon = vec3(0.78, 0.73, 0.66);
-        vec3 atmosphericColor = mix(hazeColor, warmHorizon, horizon * 0.24);
-        outputColor = vec4(mix(inputColor.rgb, atmosphericColor, hazeAmount), inputColor.a);
-      }
-    `, {
-      blendFunction: BlendFunction.NORMAL,
-      uniforms: new Map<string, THREE.Uniform<any>>([
-        ["hazeColor", new THREE.Uniform(new THREE.Color(AMBIENT_HAZE_COLOR))],
-        ["hazeOpacity", new THREE.Uniform(AMBIENT_HAZE_OPACITY)],
-      ]),
-    });
-  }
-}
-
 export function createPostFx(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
@@ -618,10 +589,9 @@ export function createPostFx(
 
   // Single merged pass: bloom runs on linear HDR, then AgX as the last effect.
   // AgX is applied here because EffectPass ignores renderer.toneMapping.
-  const haze = new AmbientHazeEffect();
+  // Atmospheric particles are rendered as scene geometry, not a screen-space wash.
   const toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.AGX });
-  // Haze stays active even when low quality disables bloom and multisampling.
-  const effectPass = new EffectPass(camera, bloom, haze, toneMapping);
+  const effectPass = new EffectPass(camera, bloom, toneMapping);
 
   composer.addPass(renderPass);
   composer.addPass(effectPass);
