@@ -380,7 +380,10 @@ export function createGoldenHourEnvironment(
 
   // --- Weak fill ------------------------------------------------------------
   const fillLight = new THREE.HemisphereLight(FILL_SKY, FILL_GROUND, FILL_INTENSITY);
-  scene.add(fillLight);
+  // A very low, non-directional base light gently lifts deep shadows without adding
+  // another shadow pass or changing the sun / environment-map pipeline.
+  const ambientLight = new THREE.AmbientLight(0xdce6f0, 0.12);
+  scene.add(fillLight, ambientLight);
 
   // --- Sun ------------------------------------------------------------------
   // Cascaded shadow maps: each frame the renderer fits two orthographic cascades to slices of the rendering
@@ -439,6 +442,8 @@ export function createGoldenHourEnvironment(
     fillLight.color.setHex(FILL_SKY).lerp(tint.setHex(OVERCAST_FILL_SKY), cloud);
     fillLight.groundColor.setHex(FILL_GROUND).lerp(tint.setHex(WET_FILL_GROUND), rain);
     fillLight.intensity = curve(FILL_INTENSITY_KEYS, e) * (1 + 1.1 * cloud);
+    // Keep the base lift subtle; overcast and rain get a small boost, not a flat wash.
+    ambientLight.intensity = 0.12 + 0.06 * cloud + 0.03 * rain;
 
     scene.environmentIntensity = curve(ENV_INTENSITY_KEYS, e) * (1 - 0.25 * rain);
     renderer.toneMappingExposure = curve(EXPOSURE_KEYS, e) * (1 + 0.18 * cloud);
@@ -476,7 +481,7 @@ export function createGoldenHourEnvironment(
       if (disposed) return;
       disposed = true;
 
-      scene.remove(sky, fillLight, sunLight);
+      scene.remove(sky, fillLight, ambientLight, sunLight);
       if (scene.environment === envTarget.texture) scene.environment = null;
 
       sky.geometry.dispose();
