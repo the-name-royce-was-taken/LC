@@ -6,6 +6,8 @@ import { setSceneryQuality } from "@/lib/render/scenery-detail";
 import { setSceneryDensity } from "@/lib/render/scenery-instances";
 import {
   BloomEffect,
+  BlendFunction,
+  Effect,
   EffectComposer,
   EffectPass,
   RenderPass,
@@ -45,6 +47,7 @@ import {
  *     to PCF with a warning). PCFShadowMap plus shadow.radius gives the same
  *     Vogel-disk soft edge, so PCFShadowMap is used.
  *   - BloomEffect levels = 5 (default 8) to keep the mip chain cheap at 120 FPS.
+ *   - A single full-screen haze mix gives a uniform ambient veil at negligible shader cost.
  *   - Sky cloudCoverage = 0. The Sky shader skips its cloud fbm entirely when
  *     coverage is 0, which keeps the sky cheap and the sky clear.
  *
@@ -76,14 +79,13 @@ const SHADOW_DISTANCE_M = 250;
 
 const SKY_SCALE = 4500;
 /** Linear radiance cap for the visible sun disc (bloom threshold is 1.1) */
-const SUN_DISC_MAX_RADIANCE = 18;
+const SUN_DISC_MAX_RADIANCE = 8;
 /** Brings the Sky shader's radiance to this scene's exposure (applies to the PMREM bake too) */
 const SKY_RADIANCE_SCALE = 0.12;
 const ENV_SIZE = 256;
 
-// Warm hazy horizon, picked by eye to sit between the Sky's warm horizon glow
-// near the sun and its pale blue zenith at 14 deg elevation, turbidity 2.8.
-// No distance fog: haze is represented by soft, broad atmospheric fill lighting instead.
+// A subtle full-frame atmospheric veil is applied in the post-processing pass below.
+// It is deliberately uniform (not distance fog) and remains enabled on every quality preset.
 
 const SUN_COLOR = 0xffebd6;
 const SUN_INTENSITY = 3.2;
@@ -92,6 +94,8 @@ const FILL_GROUND = 0x6b6a3a;
 // Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
+const AMBIENT_HAZE_COLOR = 0xcbd6df;
+const AMBIENT_HAZE_OPACITY = 0.085;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -488,6 +492,29 @@ export function createGoldenHourEnvironment(
 // Post-processing
 // ---------------------------------------------------------------------------
 
+/**
+ * Uniform atmospheric haze: a single full-screen colour mix, independent of
+ * scene depth and graphics preset. This is intentionally not volumetric fog.
+ */
+class AmbientHazeEffect extends Effect {
+  constructor() {
+    super("AmbientHazeEffect", `
+      uniform vec3 hazeColor;
+      uniform float hazeOpacity;
+
+      void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+        outputColor = vec4(mix(inputColor.rgb, hazeColor, hazeOpacity), inputColor.a);
+      }
+    `, {
+      blendFunction: BlendFunction.NORMAL,
+      uniforms: new Map([
+        ["hazeColor", new THREE.Uniform(new THREE.Color(AMBIENT_HAZE_COLOR))],
+        ["hazeOpacity", new THREE.Uniform(AMBIENT_HAZE_OPACITY)],
+      ]),
+    });
+  }
+}
+
 export function createPostFx(
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
@@ -512,8 +539,10 @@ export function createPostFx(
 
   // Single merged pass: bloom runs on linear HDR, then AgX as the last effect.
   // AgX is applied here because EffectPass ignores renderer.toneMapping.
+  const haze = new AmbientHazeEffect();
   const toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.AGX });
-  const effectPass = new EffectPass(camera, bloom, toneMapping);
+  // Haze stays active even when low quality disables bloom and multisampling.
+  const effectPass = new EffectPass(camera, bloom, haze, toneMapping);
 
   composer.addPass(renderPass);
   composer.addPass(effectPass);
