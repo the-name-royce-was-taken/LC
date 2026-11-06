@@ -87,7 +87,8 @@ const SUN_COLOR = 0xffebd6;
 const SUN_INTENSITY = 3.2;
 const FILL_SKY = 0xc4d8ee;
 const FILL_GROUND = 0x6b6a3a;
-// Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.\nconst FILL_INTENSITY = 0.48;
+// Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
+const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
