@@ -49,7 +49,7 @@ import {
  *     coverage is 0, which keeps the sky cheap and the sky clear.
  *
  * Time of day and weather (setConditions)
- *   The sun, sky, fill, fog and exposure follow the session's sun position and
+ *   The sun, sky, fill and exposure follow the session's sun position and
  *   cloud / rain (src/lib/sim/weather.ts). Every curve passes exactly through
  *   the values above at 14 deg / 127 deg with a clear sky, so the default
  *   golden-hour look is unchanged. Lights and fog update every call (cheap);
@@ -76,22 +76,22 @@ const SHADOW_DISTANCE_M = 250;
 
 const SKY_SCALE = 4500;
 /** Linear radiance cap for the visible sun disc (bloom threshold is 1.1) */
-const SUN_DISC_MAX_RADIANCE = 30;
+const SUN_DISC_MAX_RADIANCE = 18;
 /** Brings the Sky shader's radiance to this scene's exposure (applies to the PMREM bake too) */
-const SKY_RADIANCE_SCALE = 0.15;
+const SKY_RADIANCE_SCALE = 0.12;
 const ENV_SIZE = 256;
 
 // Warm hazy horizon, picked by eye to sit between the Sky's warm horizon glow
 // near the sun and its pale blue zenith at 14 deg elevation, turbidity 2.8.
-const FOG_COLOR = 0xe8c6a0;
-const FOG_DENSITY = 0.00035;
+// No distance fog: haze is represented by soft, broad atmospheric fill lighting instead.
 
 const SUN_COLOR = 0xffebd6;
-const SUN_INTENSITY = 5.0;
+const SUN_INTENSITY = 3.2;
 const FILL_SKY = 0xc4d8ee;
 const FILL_GROUND = 0x6b6a3a;
-const FILL_INTENSITY = 0.35;
-const EXPOSURE = 1.15;
+// Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
+const FILL_INTENSITY = 0.48;
+const EXPOSURE = 0.98;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -274,14 +274,11 @@ function colorCurve(keys: readonly Key[], x: number, out: THREE.Color): THREE.Co
 
 // Keys by sun elevation (deg). Each passes through the golden-hour constant at 14 deg.
 const SUN_COLOR_KEYS: readonly Key[] = [[-2, 0xff6a2a], [4, 0xffa262], [14, SUN_COLOR], [35, 0xfff4e8], [70, 0xfff8f2]];
-const SUN_INTENSITY_KEYS: readonly Key[] = [[-3, 0], [1, 0.8], [6, 3.0], [14, SUN_INTENSITY], [35, 5.8], [70, 6.2]];
-const FILL_INTENSITY_KEYS: readonly Key[] = [[-3, 0.12], [4, 0.26], [14, FILL_INTENSITY], [40, 0.45], [70, 0.5]];
-const FOG_COLOR_KEYS: readonly Key[] = [[-3, 0x5e5468], [4, 0xd49c7c], [14, FOG_COLOR], [35, 0xd8dade], [70, 0xc8d4e2]];
+const SUN_INTENSITY_KEYS: readonly Key[] = [[-3, 0], [1, 0.5], [6, 1.9], [14, SUN_INTENSITY], [35, 3.8], [70, 4.1]];
+const FILL_INTENSITY_KEYS: readonly Key[] = [[-3, 0.18], [4, 0.34], [14, FILL_INTENSITY], [40, 0.58], [70, 0.62]];
 const ENV_INTENSITY_KEYS: readonly Key[] = [[-3, 0.3], [4, 0.7], [14, 1], [70, 1.1]];
-const EXPOSURE_KEYS: readonly Key[] = [[-3, 1.5], [4, 1.32], [14, EXPOSURE], [35, 1.08], [70, 1.05]];
+const EXPOSURE_KEYS: readonly Key[] = [[-3, 1.25], [4, 1.1], [14, EXPOSURE], [35, 0.95], [70, 0.93]];
 const OVERCAST_SUN = 0xe6e8ea;
-const OVERCAST_FOG = 0xb2b6ba;
-const RAIN_FOG = 0x8c9297;
 const OVERCAST_FILL_SKY = 0xc6cad0;
 const WET_FILL_GROUND = 0x4c4c40;
 
@@ -377,9 +374,6 @@ export function createGoldenHourEnvironment(
   scene.environmentIntensity = 1.0;
   scene.background = null;
 
-  const fog = new THREE.FogExp2(FOG_COLOR, FOG_DENSITY);
-  scene.fog = fog;
-
   // --- Weak fill ------------------------------------------------------------
   const fillLight = new THREE.HemisphereLight(FILL_SKY, FILL_GROUND, FILL_INTENSITY);
   scene.add(fillLight);
@@ -442,15 +436,8 @@ export function createGoldenHourEnvironment(
     fillLight.groundColor.setHex(FILL_GROUND).lerp(tint.setHex(WET_FILL_GROUND), rain);
     fillLight.intensity = curve(FILL_INTENSITY_KEYS, e) * (1 + 1.1 * cloud);
 
-    colorCurve(FOG_COLOR_KEYS, e, fog.color)
-      .lerp(tint.setHex(OVERCAST_FOG), 0.8 * cloud)
-      .lerp(tint.setHex(RAIN_FOG), rain);
-    // A low sun dims the overcast / rain haze too
-    if (cloud > 0 && e < 14) fog.color.multiplyScalar(1 - cloud * (1 - curve(ENV_INTENSITY_KEYS, e)));
-    fog.density = FOG_DENSITY * (1 + 1.2 * cloud) + 0.0022 * Math.pow(rain, 1.2);
-
     scene.environmentIntensity = curve(ENV_INTENSITY_KEYS, e) * (1 - 0.25 * rain);
-    renderer.toneMappingExposure = curve(EXPOSURE_KEYS, e) * (1 + 0.3 * cloud);
+    renderer.toneMappingExposure = curve(EXPOSURE_KEYS, e) * (1 + 0.18 * cloud);
 
     skyLookFor(current, skyLook);
     applySkyLook(sky, skySunDir, skyLook);
@@ -487,7 +474,6 @@ export function createGoldenHourEnvironment(
 
       scene.remove(sky, fillLight, sunLight);
       if (scene.environment === envTarget.texture) scene.environment = null;
-      if (scene.fog === fog) scene.fog = null;
 
       sky.geometry.dispose();
       sky.material.dispose();
