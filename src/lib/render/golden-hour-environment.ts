@@ -92,7 +92,7 @@ const FILL_GROUND = 0x6b6a3a;
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
 const DISTANCE_FOG_COLOR = 0xb9cbd8;
-const DISTANCE_FOG_DENSITY = 0.00038;
+const DISTANCE_FOG_DENSITY = 0.0004028;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
