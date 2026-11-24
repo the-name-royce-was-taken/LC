@@ -29,6 +29,7 @@ interface ParticleInstance {
   scale0: number;
   scale1: number;
   color: THREE.Color;
+  isSmoke: boolean;
 }
 
 export class SimVisualFxManager {
@@ -97,11 +98,12 @@ export class SimVisualFxManager {
     this.group.add(this.skidMesh);
 
     // 2. Initialize Instanced Tire Smoke & Gravel Particles
-    const puffGeom = new THREE.IcosahedronGeometry(0.32, 1);
+    // Smooth, low-poly spheres read as soft smoke puffs without a texture or extra draw calls.
+    const puffGeom = new THREE.SphereGeometry(0.32, 10, 8);
     const puffMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.36,
+      opacity: 0.24,
       depthWrite: false,
     });
     this.particleMesh = new THREE.InstancedMesh(
@@ -122,6 +124,7 @@ export class SimVisualFxManager {
         scale0: 0.3,
         scale1: 1.8,
         color: new THREE.Color(0xe2e8f0),
+        isSmoke: false,
       });
       this.dummy.position.set(0, -1000, 0);
       this.dummy.scale.setScalar(0.001);
@@ -223,9 +226,10 @@ export class SimVisualFxManager {
             carUp,
             carSpeedMs,
             0.35,
-            2.2,
-            0.58,
-            0xe2e8f0
+            2.8,
+            0.98,
+            0xd9dce0,
+            true
           );
         } else if (w.surfaceType === 'grass' || w.surfaceType === 'runoff') {
           this.spawnParticle(
@@ -318,7 +322,8 @@ export class SimVisualFxManager {
     scale0: number,
     scale1: number,
     maxAge: number,
-    colorHex: number
+    colorHex: number,
+    isSmoke = false
   ): void {
     const p = this.particles[this.particleCursor % MAX_PARTICLES];
     this.particleCursor++;
@@ -340,6 +345,7 @@ export class SimVisualFxManager {
     p.scale0 = scale0;
     p.scale1 = scale1;
     p.color.setHex(colorHex);
+    p.isSmoke = isSmoke;
   }
 
   private stepParticles(dt: number): void {
@@ -360,13 +366,31 @@ export class SimVisualFxManager {
       }
 
       const lifeT = p.age / p.maxAge;
+      if (p.isSmoke) {
+        // Warm lift and gentle, deterministic turbulence make smoke billow instead of
+        // behaving like rigid balls. Keep the motion CPU-cheap and independent per puff.
+        p.vel.y += 0.9 * dt;
+        p.vel.x += Math.sin(p.age * 4.1 + p.pos.z * 0.17) * 0.32 * dt;
+        p.vel.z += Math.cos(p.age * 3.7 + p.pos.x * 0.15) * 0.32 * dt;
+      }
       p.pos.addScaledVector(p.vel, dt);
-      p.vel.multiplyScalar(Math.max(0, 1.0 - 2.2 * dt));
+      p.vel.multiplyScalar(Math.max(0, 1.0 - (p.isSmoke ? 1.65 : 2.2) * dt));
 
-      const s = THREE.MathUtils.lerp(p.scale0, p.scale1, lifeT) * (1.0 - lifeT * 0.35);
+      const growth = THREE.MathUtils.lerp(p.scale0, p.scale1, lifeT);
+      const lifeEnvelope = p.isSmoke
+        ? 0.16 + 0.84 * Math.pow(Math.sin(Math.PI * lifeT), 0.42)
+        : 1.0 - lifeT * 0.35;
+      const s = growth * lifeEnvelope;
       this.dummy.position.copy(p.pos);
-      this.dummy.scale.setScalar(Math.max(0.01, s));
-      this.dummy.rotation.set(lifeT * 2.1, lifeT * 1.7, 0);
+      if (p.isSmoke) {
+        // Smoke expands sideways as it cools and rises, rather than staying spherical.
+        this.dummy.scale.set(Math.max(0.01, s * (1.0 + lifeT * 0.34)), Math.max(0.01, s * (0.82 + lifeT * 0.12)), Math.max(0.01, s * (1.0 + lifeT * 0.34)));
+        const pale = new THREE.Color(0xe8e9e9);
+        p.color.lerp(pale, Math.min(1, lifeT * 0.7));
+      } else {
+        this.dummy.scale.setScalar(Math.max(0.01, s));
+      }
+      this.dummy.rotation.set(lifeT * 1.4, lifeT * 1.1, lifeT * 0.7);
       this.dummy.updateMatrix();
       this.particleMesh.setMatrixAt(i, this.dummy.matrix);
       this.particleMesh.setColorAt(i, p.color);

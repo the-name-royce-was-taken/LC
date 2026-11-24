@@ -8,7 +8,7 @@ import { AMG_GT3_SOUND } from "@/lib/sim/gt3/AmgGt3Sim";
  * needs its GLB (`public/cars/<id>/model/`), its sound bank (`public/cars/<id>/audio/`) and an entry here.
  * The first car of each vehicle model keeps the model's id, so saved choices and `?car=` links still resolve.
  */
-export type CarId = "vf26" | "f12026-car" | "amg-gt3";
+export type CarId = "vf26" | "f12026-car" | "amg-gt3" | "amg-gt3-red-bull";
 
 export type CarClassId = "f1-2026" | "gt3";
 
@@ -29,6 +29,9 @@ export interface CarDefinition {
   physics: VehicleModelId;
   /** A ported GLB on the generic rig (`ported-car-model.ts`); absent: the vehicle model's own car */
   modelUrl?: string;
+  /** Alternate exterior/cockpit assets using the dedicated GT3 rig */
+  gt3ModelUrl?: string;
+  gt3CockpitUrl?: string;
   sound: CarSoundSource;
 }
 
@@ -63,6 +66,17 @@ export const CARS: readonly CarDefinition[] = [
     sub: "GT3 Pro · 6.2L V8 · Multi-stage ABS / TC",
     badge: "GT3 PRO",
     physics: "amg-gt3",
+    sound: AMG_GT3_SOUND,
+  },
+  {
+    id: "amg-gt3-red-bull",
+    classId: "gt3",
+    title: "MERCEDES BENZ GT3",
+    sub: "GT3 Pro · Red Bull livery · 6.2L V8",
+    badge: "RED BULL",
+    physics: "amg-gt3",
+    gt3ModelUrl: "/mercedes_benz_amg_gt3_red_bull/model/amg_gt3.glb",
+    gt3CockpitUrl: "/mercedes_benz_amg_gt3_red_bull/model/amg_gt3_cockpit.glb",
     sound: AMG_GT3_SOUND,
   },
 ];
