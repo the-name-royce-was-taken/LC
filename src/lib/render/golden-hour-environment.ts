@@ -6,8 +6,6 @@ import { setSceneryQuality } from "@/lib/render/scenery-detail";
 import { setSceneryDensity } from "@/lib/render/scenery-instances";
 import {
   BloomEffect,
-  BlendFunction,
-  Effect,
   EffectComposer,
   EffectPass,
   RenderPass,
@@ -84,8 +82,7 @@ const SUN_DISC_MAX_RADIANCE = 3.5;
 const SKY_RADIANCE_SCALE = 0.12;
 const ENV_SIZE = 256;
 
-// A subtle full-frame atmospheric veil is applied in the post-processing pass below.
-// It is deliberately uniform (not distance fog) and remains enabled on every quality preset.
+// Subtle exponential scene fog fades distant scenery without washing out nearby objects.
 
 const SUN_COLOR = 0xffebd6;
 const SUN_INTENSITY = 2.6;
@@ -94,8 +91,8 @@ const FILL_GROUND = 0x6b6a3a;
 // Broad, low-contrast atmospheric fill creates a uniform hazy feel without distance fog.
 const FILL_INTENSITY = 0.48;
 const EXPOSURE = 0.98;
-const AMBIENT_HAZE_COLOR = 0xb9cbd8;
-const AMBIENT_HAZE_OPACITY = 0.075;
+const DISTANCE_FOG_COLOR = 0xb9cbd8;
+const DISTANCE_FOG_DENSITY = 0.00038;
 const SKY_TURBIDITY = 2.8;
 const SKY_RAYLEIGH = 1.8;
 /** Minimum time between environment re-bakes (s) */
@@ -378,6 +375,13 @@ export function createGoldenHourEnvironment(
   scene.environmentIntensity = 1.0;
   scene.background = null;
 
+  // --- Subtle 3D distance fog ----------------------------------------------
+  // Exponential fog is evaluated from each fragment's camera-space depth:
+  // nearby track and cars stay clear while distant scenery fades progressively.
+  const previousFog = scene.fog;
+  const distanceFog = new THREE.FogExp2(DISTANCE_FOG_COLOR, DISTANCE_FOG_DENSITY);
+  scene.fog = distanceFog;
+
   // --- Weak fill ------------------------------------------------------------
   const fillLight = new THREE.HemisphereLight(FILL_SKY, FILL_GROUND, FILL_INTENSITY);
   scene.add(fillLight);
@@ -477,6 +481,7 @@ export function createGoldenHourEnvironment(
       disposed = true;
 
       scene.remove(sky, fillLight, sunLight);
+      if (scene.fog === distanceFog) scene.fog = previousFog;
       if (scene.environment === envTarget.texture) scene.environment = null;
 
       sky.geometry.dispose();
@@ -491,35 +496,6 @@ export function createGoldenHourEnvironment(
 // ---------------------------------------------------------------------------
 // Post-processing
 // ---------------------------------------------------------------------------
-
-/**
- * Uniform atmospheric haze: a single full-screen colour mix, independent of
- * scene depth and graphics preset. This is intentionally not volumetric fog.
- */
-class AmbientHazeEffect extends Effect {
-  constructor() {
-    super("AmbientHazeEffect", `
-      uniform vec3 hazeColor;
-      uniform float hazeOpacity;
-
-      void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-        // Atmospheric perspective is strongest around the horizon and falls away
-        // toward the sky and foreground, avoiding a flat grey wash over the frame.
-        float horizon = exp(-pow((uv.y - 0.46) / 0.30, 2.0));
-        float hazeAmount = hazeOpacity * (0.18 + 0.82 * horizon);
-        vec3 warmHorizon = vec3(0.78, 0.73, 0.66);
-        vec3 atmosphericColor = mix(hazeColor, warmHorizon, horizon * 0.24);
-        outputColor = vec4(mix(inputColor.rgb, atmosphericColor, hazeAmount), inputColor.a);
-      }
-    `, {
-      blendFunction: BlendFunction.NORMAL,
-      uniforms: new Map<string, THREE.Uniform<any>>([
-        ["hazeColor", new THREE.Uniform(new THREE.Color(AMBIENT_HAZE_COLOR))],
-        ["hazeOpacity", new THREE.Uniform(AMBIENT_HAZE_OPACITY)],
-      ]),
-    });
-  }
-}
 
 export function createPostFx(
   renderer: THREE.WebGLRenderer,
@@ -544,11 +520,9 @@ export function createPostFx(
   });
 
   // Single merged pass: bloom runs on linear HDR, then AgX as the last effect.
-  // AgX is applied here because EffectPass ignores renderer.toneMapping.
-  const haze = new AmbientHazeEffect();
+  // Distance fog is part of the 3D scene render, not a screen-space post effect.
   const toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.AGX });
-  // Haze stays active even when low quality disables bloom and multisampling.
-  const effectPass = new EffectPass(camera, bloom, haze, toneMapping);
+  const effectPass = new EffectPass(camera, bloom, toneMapping);
 
   composer.addPass(renderPass);
   composer.addPass(effectPass);
