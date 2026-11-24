@@ -46,15 +46,16 @@ interface Gt3Extras {
   tyreHalfWidth?: Record<string, number>;
 }
 
-let templatePromise: Promise<THREE.Group | null> | null = null;
-let cockpitPromise: Promise<THREE.Group | null> | null = null;
+const templatePromises = new Map<string, Promise<THREE.Group | null>>();
+const cockpitPromises = new Map<string, Promise<THREE.Group | null>>();
 
 /** The ported cockpit (null when the file is absent: the source model's interior stays) */
-export function loadGt3Cockpit(): Promise<THREE.Group | null> {
+export function loadGt3Cockpit(cockpitUrl = COCKPIT_URL): Promise<THREE.Group | null> {
+  let cockpitPromise = cockpitPromises.get(cockpitUrl);
   if (!cockpitPromise) {
     cockpitPromise = (async () => {
       if (typeof window === "undefined") return null;
-      const url = withBasePath(COCKPIT_URL);
+      const url = withBasePath(cockpitUrl);
       try {
         const head = await fetch(url, { method: "HEAD" });
         if (!head.ok) return null;
@@ -75,6 +76,7 @@ export function loadGt3Cockpit(): Promise<THREE.Group | null> {
         return null;
       }
     })();
+    cockpitPromises.set(cockpitUrl, cockpitPromise);
   }
   return cockpitPromise;
 }
@@ -135,11 +137,12 @@ function rebaseWheels(scene: THREE.Group, extras: Gt3Extras): void {
   });
 }
 
-export function loadGt3Template(): Promise<THREE.Group | null> {
+export function loadGt3Template(modelUrl = MODEL_URL): Promise<THREE.Group | null> {
+  let templatePromise = templatePromises.get(modelUrl);
   if (!templatePromise) {
     templatePromise = (async () => {
       if (typeof window === "undefined") return null;
-      const url = withBasePath(MODEL_URL);
+      const url = withBasePath(modelUrl);
       assetProgress.begin("car");
       try {
         const head = await fetch(url, { method: "HEAD" });
@@ -172,6 +175,7 @@ export function loadGt3Template(): Promise<THREE.Group | null> {
         return null;
       }
     })();
+    templatePromises.set(modelUrl, templatePromise);
   }
   return templatePromise;
 }
@@ -218,7 +222,7 @@ function placeholderBody(): THREE.Mesh {
  * The GT3's car rig: model body in `chassisGroup` (sprung), wheels and callipers on per-corner steer pivots under
  * `root` (unsprung), aligned so the model's axles sit on the physics axles.
  */
-export function createGt3CarRig(): SimCarRig {
+export function createGt3CarRig(modelUrl = MODEL_URL, cockpitUrl = COCKPIT_URL): SimCarRig {
   const root = new THREE.Group();
   root.name = "GT3_RIG";
   const chassisGroup = new THREE.Group();
@@ -253,7 +257,7 @@ export function createGt3CarRig(): SimCarRig {
   let ledBlinkRpm = Infinity;
   const indicators: Partial<Record<"abs" | "tc" | "tcLed" | "limiter", THREE.Object3D>> = {};
 
-  void Promise.all([loadGt3Template(), loadGt3Cockpit()]).then(([template, cockpitTemplate]) => {
+  void Promise.all([loadGt3Template(modelUrl), loadGt3Cockpit(cockpitUrl)]).then(([template, cockpitTemplate]) => {
     if (!template || disposed) return;
     const model = template.clone(true);
     model.updateMatrixWorld(true);
