@@ -86,6 +86,7 @@ import { LoadingScreen } from "@/components/menu/LoadingScreen";
 import { TitleMenu } from "@/components/menu/TitleMenu";
 import { FirstRunWizard, type WizardMode, type WizardStepId } from "@/components/menu/FirstRunWizard";
 import { assetProgress } from "@/lib/loading/asset-progress";
+import { withBasePath } from "@/lib/base-path";
 import { buildKeyLookup, HUD_TOGGLE_EVENT, keyLabel, padButtonLabel, type KeyAction } from "@/lib/input/bindings";
 import { carWheelLockDeg, connectedPads, DeviceInputReader } from "@/lib/input/device-input";
 import { webHidFfb, wheelFfb } from "@/lib/input/wheel-ffb";
@@ -546,6 +547,10 @@ export const LibreCorsaSimulator: React.FC<LibreCorsaSimulatorProps> = ({ trackI
   const handleChangeCar = useCallback(
     (next: CarId) => {
       unlockAudio();
+      if (next === "amg-gt3-red-bull") {
+        const easterEgg = new Audio(withBasePath("/audio/easteregg.mp3"));
+        void easterEgg.play().catch((error) => console.warn("Easter egg audio could not be played", error));
+      }
       if (next === carIdRef.current) return;
       carIdRef.current = next;
       setCarId(next);
@@ -1259,9 +1264,11 @@ export const LibreCorsaSimulator: React.FC<LibreCorsaSimulatorProps> = ({ trackI
             chassis: (def.physics === "amg-gt3" ? AMG_GT3_CONFIG : F12026_CAR_CONFIG).chassis,
             steerLockDeg: carWheelLockDeg(def.physics) / 2,
           })
-        : isGt3Rig(car)
-          ? createGt3CarRig()
-          : createF1Car2026(liveryRef.current, physics.tireCompound);
+        : def.gt3ModelUrl
+          ? createGt3CarRig(def.gt3ModelUrl, def.gt3CockpitUrl)
+          : isGt3Rig(car)
+            ? createGt3CarRig()
+            : createF1Car2026(liveryRef.current, physics.tireCompound);
       rig.setLivery(liveryRef.current);
       scene.add(rig.root);
       carRigRef.current = rig;
